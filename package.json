@@ -1,0 +1,51 @@
+{
+  "name": "atlassian-opentui",
+  "version": "1.0.0",
+  "description": "Terminal UI for Jira and Confluence",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "atlassian-tui": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.tsx",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "jira",
+    "confluence",
+    "atlassian",
+    "terminal",
+    "tui"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "adf-to-markdown": "^1.0.1",
+    "better-sqlite3": "^11.5.0",
+    "chalk": "^4.1.2",
+    "clipboardy": "^5.1.0",
+    "commander": "^12.1.0",
+    "conf": "^13.1.0",
+    "fuse.js": "^7.1.0",
+    "ink": "^5.2.1",
+    "ink-select-input": "^6.2.0",
+    "ink-text-input": "^6.0.0",
+    "ky": "^1.14.3",
+    "markdown-it": "^14.1.0",
+    "marklassian": "^1.1.0",
+    "turndown": "^7.2.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.7",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^25.1.0",
+    "@types/react": "^19.2.10",
+    "@types/turndown": "^5.0.6",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

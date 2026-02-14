@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible bug
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please include enough detail to reproduce quickly.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One-line description of the bug
+      placeholder: Confluence page click-to-cursor is offset after mouse scroll
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact sequence of keys/clicks/actions
+      placeholder: |
+        1. Open Confluence > Browse Pages
+        2. Open any page
+        3. Scroll down with mouse wheel
+        4. Click near last line
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, terminal app, Node version
+      placeholder: macOS 15.x, iTerm2 3.x, Node 20.x
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional but useful

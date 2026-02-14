@@ -1,0 +1,749 @@
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useStdout } from 'ink';
+import TextInput from 'ink-text-input';
+import { JiraIssue, JiraTransition, JiraAttachment } from '../../api/jira-client.js';
+import { AdfConverter } from '../../formatters/adf-converter.js';
+import { SelectableItem } from '../common/SelectableItem.js';
+import { openExternalEditor } from '../../utils/external-editor.js';
+import { buildJiraIssueUrl, copyToClipboard, openInBrowser } from '../../utils/links.js';
+import { getDownloadsDir, normalizeDraggedPath } from '../../utils/paths.js';
+import { toggleBookmark, isBookmarked } from '../../storage/bookmarks.js';
+import { writeFileSync } from 'fs';
+import { join } from 'path';
+import { highlightMarkdownLine, detectCodeBlock, highlightCodeLine } from '../../utils/markdown-highlighter.js';
+import { getJiraStatusColor, getJiraTypeColor, getJiraPriorityColor } from '../../utils/jira-colors.js';
+import { te } from '../../theme/te.js';
+
+type DetailMode =
+  | 'view'
+  | 'edit-title'
+  | 'edit-description'
+  | 'add-comment'
+  | 'edit-comment'
+  | 'comments'
+  | 'attachments'
+  | 'upload-attachment'
+  | 'select-status'
+  | 'select-comment';
+
+export interface TicketDetailProps {
+  issue: JiraIssue;
+  baseUrl: string;
+  currentAccountId?: string;
+  transitions?: JiraTransition[];
+  onSaveTitle?: (title: string) => Promise<void>;
+  onSaveDescription?: (description: string) => Promise<void>;
+  onAddComment?: (comment: string) => Promise<void>;
+  onUpdateComment?: (commentId: string, comment: string) => Promise<void>;
+  onTransition?: (transitionId: string) => Promise<void>;
+  onFetchComments?: () => Promise<any[]>;
+  onDownloadAttachment?: (attachmentId: string, filename: string) => Promise<{ data: Buffer; filename: string }>;
+  onUploadAttachment?: (filePath: string) => Promise<void>;
+  onBookmarkChanged?: () => void;
+  onRefresh?: () => void;
+  onBack?: () => void;
+}
+
+export function TicketDetail({
+  issue,
+  baseUrl,
+  currentAccountId,
+  transitions = [],
+  onSaveTitle,
+  onSaveDescription,
+  onAddComment,
+  onUpdateComment,
+  onTransition,
+  onFetchComments,
+  onDownloadAttachment,
+  onUploadAttachment,
+  onBookmarkChanged,
+  onRefresh,
+  onBack
+}: TicketDetailProps) {
+  const { stdout } = useStdout();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [mode, setMode] = useState<DetailMode>('view');
+  const [editValue, setEditValue] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [selectedCommentIndex, setSelectedCommentIndex] = useState(0);
+  const [selectedTransitionIndex, setSelectedTransitionIndex] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [allComments, setAllComments] = useState<any[]>([]);
+  const [attachmentsMessage, setAttachmentsMessage] = useState<string | null>(null);
+  const [uploadPath, setUploadPath] = useState('');
+
+  const description = AdfConverter.adfToMarkdown(issue.fields.description);
+  const comments = issue.fields.comment?.comments || [];
+  const attachments = issue.fields.attachment || [];
+  const terminalRows = stdout?.rows || 24;
+  const compactViewport = terminalRows <= 32;
+  const previewWidth = Math.max(20, (stdout?.columns || 80) - 10);
+  const descriptionPreviewLines = compactViewport ? 3 : 5;
+
+  const renderMarkdownPreview = (markdown: string, maxLines: number) => {
+    const lines = markdown.split('\n');
+    return lines.slice(0, maxLines).map((line, i) => {
+      const displayLine =
+        line.length > previewWidth ? `${line.slice(0, Math.max(0, previewWidth - 3))}...` : line;
+      const codeBlockLang = detectCodeBlock(lines, i);
+      const content =
+        codeBlockLang && !displayLine.startsWith('```')
+          ? highlightCodeLine(displayLine || ' ', codeBlockLang)
+          : highlightMarkdownLine(displayLine || ' ', i);
+
+      return (
+        <Box key={`${i}-${displayLine}`} height={1}>
+          {content}
+        </Box>
+      );
+    });
+  };
+
+  // Get user's own comments that can be edited
+  const myComments = comments.filter((c: any) =>
+    currentAccountId && c.author?.accountId === currentAccountId
+  );
+
+  // Selectable items: Status, Title, Description, Add Comment, [Edit Comment if exists]
+  const selectableItems = ['status', 'title', 'description', 'add-comment'];
+  // add comments + attachments entries
+  selectableItems.splice(3, 0, 'comments', 'attachments');
+  if (myComments.length > 0) {
+    selectableItems.push('edit-comment');
+  }
+  const selectableCount = selectableItems.length;
+
+  // Clear copy message after 2 seconds
+  useEffect(() => {
+    if (copyMessage) {
+      const timer = setTimeout(() => setCopyMessage(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [copyMessage]);
+
+  useEffect(() => {
+    setBookmarked(isBookmarked('jira', issue.key));
+  }, [issue.key]);
+
+  useEffect(() => {
+    setAllComments(comments);
+  }, [issue.key, comments.length]);
+
+  useEffect(() => {
+    if (mode === 'comments' && onFetchComments) {
+      setCommentsLoading(true);
+      onFetchComments()
+        .then((data: any[]) => setAllComments(data || []))
+        .catch(() => setAllComments([]))
+        .finally(() => setCommentsLoading(false));
+    }
+  }, [mode, onFetchComments]);
+
+  // Handle keyboard input
+  useInput((input, key) => {
+    // External editor for long-form fields
+    if ((key.ctrl && input === 'e') && (mode === 'edit-description' || mode === 'add-comment' || mode === 'edit-comment')) {
+      (async () => {
+        setSaving(true);
+        const result = await openExternalEditor({
+          content: editValue,
+          extension: 'md',
+        });
+        setSaving(false);
+        if (result.success && result.content !== undefined) {
+          setEditValue(result.content);
+        } else if (result.error) {
+          setError(result.error);
+        }
+      })();
+      return;
+    }
+
+    if (key.ctrl && input === 'o') {
+      openInBrowser(buildJiraIssueUrl(baseUrl, issue.key));
+      return;
+    }
+    if (key.ctrl && input === 'y') {
+      handleCopyUrl();
+      return;
+    }
+    if (key.ctrl && input === 'b') {
+      const now = toggleBookmark(
+        'jira',
+        issue.key,
+        `${issue.key}: ${issue.fields.summary}`,
+        buildJiraIssueUrl(baseUrl, issue.key),
+        { status: issue.fields.status?.name }
+      );
+      setBookmarked(now);
+      onBookmarkChanged?.();
+      setCopyMessage(now ? '★ Bookmarked' : '☆ Bookmark removed');
+      return;
+    }
+
+    // Global Escape Handler
+    if (key.escape) {
+      if (mode !== 'view') {
+        handleCancel();
+      } else if (onBack) {
+        onBack();
+      }
+      return;
+    }
+
+    // Comment selection mode
+    if (mode === 'select-comment') {
+      if (key.upArrow) {
+        setSelectedCommentIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setSelectedCommentIndex(prev => Math.min(myComments.length - 1, prev + 1));
+      } else if (key.return && myComments.length > 0) {
+        const comment = myComments[selectedCommentIndex];
+        setEditingCommentId(comment.id);
+        setEditValue(AdfConverter.adfToMarkdown(comment.body));
+        setMode('edit-comment');
+      }
+      return;
+    }
+
+    // Comments view
+    if (mode === 'comments') {
+      if (key.upArrow && allComments.length > 0) {
+        setSelectedCommentIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow && allComments.length > 0) {
+        setSelectedCommentIndex(prev => Math.min(allComments.length - 1, prev + 1));
+      } else if (key.return && allComments.length > 0) {
+        const comment = allComments[selectedCommentIndex];
+        const isMine = currentAccountId && comment?.author?.accountId === currentAccountId;
+        if (comment?.id && isMine) {
+          setEditingCommentId(comment.id);
+          setEditValue(AdfConverter.adfToMarkdown(comment.body));
+          setMode('edit-comment');
+        } else if (comment?.id) {
+          setError('You can only edit your own comments.');
+        }
+      } else if (input === 'a') {
+        setEditValue('');
+        setMode('add-comment');
+      }
+      return;
+    }
+
+    // Attachments view
+    if (mode === 'attachments') {
+      if (key.upArrow && attachments.length > 0) {
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
+      } else if (key.downArrow && attachments.length > 0) {
+        setSelectedIndex((prev) => Math.min(attachments.length - 1, prev + 1));
+      } else if (input === 'u') {
+        setUploadPath('');
+        setMode('upload-attachment');
+      } else if (input === 'd' && attachments[selectedIndex]) {
+        handleDownloadAttachment(attachments[selectedIndex]);
+      }
+      return;
+    }
+
+    if (mode === 'upload-attachment') {
+      return;
+    }
+
+    // Status selection mode
+    if (mode === 'select-status') {
+      if (key.upArrow) {
+        setSelectedTransitionIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setSelectedTransitionIndex(prev => Math.min(transitions.length - 1, prev + 1));
+      } else if (key.return && transitions.length > 0) {
+        handleTransition();
+      }
+      return;
+    }
+
+    // Don't handle other input when editing (TextInput is active)
+    if (mode !== 'view') return;
+
+    // Copy shortcuts
+    if (key.ctrl && input === 'u') {
+      handleCopyKey();
+      return;
+    }
+
+    if (key.upArrow) {
+      setSelectedIndex((prev) => (prev - 1 + selectableCount) % selectableCount);
+    } else if (key.downArrow) {
+      setSelectedIndex((prev) => (prev + 1) % selectableCount);
+    } else if (key.return) {
+      handleSelect();
+    }
+  });
+
+  const handleCopyUrl = async () => {
+    try {
+      // Remove trailing slash from baseUrl to prevent double slashes
+      const url = buildJiraIssueUrl(baseUrl, issue.key);
+      await copyToClipboard(url);
+      setCopyMessage('✓ URL copied!');
+    } catch {
+      setCopyMessage('✗ Copy failed');
+    }
+  };
+
+  const handleCopyKey = async () => {
+    try {
+      await copyToClipboard(issue.key);
+      setCopyMessage('✓ Key copied!');
+    } catch {
+      setCopyMessage('✗ Copy failed');
+    }
+  };
+
+  const handleSelect = () => {
+    setError(null);
+    const item = selectableItems[selectedIndex];
+
+    switch (item) {
+      case 'status':
+        if (transitions.length > 0) {
+          setSelectedTransitionIndex(0);
+          setMode('select-status');
+        }
+        break;
+      case 'title':
+        setEditValue(issue.fields.summary);
+        setMode('edit-title');
+        break;
+      case 'description':
+        setEditValue(description.slice(0, 500));
+        setMode('edit-description');
+        break;
+      case 'comments':
+        setSelectedCommentIndex(0);
+        setMode('comments');
+        break;
+      case 'attachments':
+        setSelectedIndex(0);
+        setMode('attachments');
+        break;
+      case 'add-comment':
+        setEditValue('');
+        setMode('add-comment');
+        break;
+      case 'edit-comment':
+        if (myComments.length > 0) {
+          setSelectedCommentIndex(myComments.length - 1);
+          setMode('select-comment');
+        }
+        break;
+    }
+  };
+
+  const handleTransition = async () => {
+    if (saving || transitions.length === 0) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      if (onTransition) {
+        await onTransition(transitions[selectedTransitionIndex].id);
+      }
+      setMode('view');
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Status change failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      switch (mode) {
+        case 'edit-title':
+          if (onSaveTitle) {
+            await onSaveTitle(editValue);
+          }
+          break;
+        case 'edit-description':
+          if (onSaveDescription) {
+            await onSaveDescription(editValue);
+          }
+          break;
+        case 'add-comment':
+          if (editValue.trim() && onAddComment) {
+            await onAddComment(editValue);
+          }
+          break;
+        case 'edit-comment':
+          if (editValue.trim() && onUpdateComment && editingCommentId) {
+            await onUpdateComment(editingCommentId, editValue);
+          }
+          break;
+      }
+      setMode('view');
+      setEditingCommentId(null);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Operation failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setMode('view');
+    setEditValue('');
+    setEditingCommentId(null);
+    setError(null);
+    setSelectedIndex(0);
+  };
+
+  const handleDownloadAttachment = async (attachment: JiraAttachment) => {
+    if (!onDownloadAttachment) return;
+    setAttachmentsMessage('Downloading...');
+    try {
+      const { data, filename } = await onDownloadAttachment(attachment.id, attachment.filename);
+      const dest = join(getDownloadsDir(), filename || attachment.filename);
+      writeFileSync(dest, data);
+      setAttachmentsMessage(`✓ Saved to ${dest}`);
+    } catch (err) {
+      setAttachmentsMessage(`✗ Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+    setTimeout(() => setAttachmentsMessage(null), 3000);
+  };
+
+  // Render status selection mode
+  if (mode === 'select-status') {
+    return (
+      <Box flexDirection="column" width="100%">
+        {error && <Text color="red">Error: {error}</Text>}
+
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={te.accent}
+          paddingX={1}
+          marginY={1}
+        >
+          <Text bold color={te.accentAlt}>
+            📋 Change Status (Current: {issue.fields.status.name})
+          </Text>
+          <Box flexDirection="column" marginTop={1}>
+            {transitions.map((t, i) => (
+              <Text
+                key={t.id}
+                color={i === selectedTransitionIndex ? te.accentAlt : te.fg}
+                bold={i === selectedTransitionIndex}
+              >
+                {i === selectedTransitionIndex ? '▶ ' : '  '}
+                {t.name} → {t.to.name}
+              </Text>
+            ))}
+          </Box>
+        </Box>
+
+        {saving && <Text dimColor>Updating status...</Text>}
+
+        <Box marginTop={1}>
+          <Text dimColor>
+            ↑/↓: Navigate | Enter: Apply | Escape: Cancel
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Render comment selection mode
+  if (mode === 'select-comment') {
+    return (
+      <Box flexDirection="column" width="100%">
+        {error && <Text color="red">Error: {error}</Text>}
+
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={te.accent}
+          paddingX={1}
+          marginY={1}
+        >
+          <Text bold color={te.accentAlt}>Select Comment to Edit:</Text>
+          <Box flexDirection="column" marginTop={1}>
+            {myComments.map((c: any, i: number) => (
+              <Box key={c.id || i} flexDirection="column" marginBottom={1}>
+                <Text color={i === selectedCommentIndex ? te.accentAlt : te.fg}>
+                  {i === selectedCommentIndex ? '▶ ' : '  '}
+                  {c.created.split('T')[0]} - {AdfConverter.adfToMarkdown(c.body).slice(0, 50)}...
+                </Text>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+
+        <Box marginTop={1}>
+          <Text dimColor>
+            ↑/↓: Navigate | Enter: Select | Escape: Cancel
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === 'comments') {
+    const selected = allComments[selectedCommentIndex];
+    return (
+      <Box flexDirection="column" width="100%">
+        <Text bold color={te.accentAlt}>Comments ({allComments.length})</Text>
+        {commentsLoading && <Text dimColor>Loading comments...</Text>}
+        {error && <Text color="red">Error: {error}</Text>}
+
+        <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="gray" paddingX={1}>
+          {allComments.length === 0 && !commentsLoading && (
+            <Text dimColor>No comments yet.</Text>
+          )}
+          {allComments.map((c: any, i: number) => (
+            <Text
+              key={c.id || i}
+              color={i === selectedCommentIndex ? te.accentAlt : te.fg}
+              bold={i === selectedCommentIndex}
+            >
+              {i === selectedCommentIndex ? '▶ ' : '  '}
+              {c.author?.displayName || 'Unknown'} · {c.created?.split('T')[0] || ''}
+            </Text>
+          ))}
+        </Box>
+
+        {selected && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text dimColor>Selected:</Text>
+            <Box flexDirection="column">
+              {renderMarkdownPreview(AdfConverter.adfToMarkdown(selected.body), 12)}
+            </Box>
+          </Box>
+        )}
+
+        <Box marginTop={1}>
+          <Text dimColor>↑/↓: Navigate | Enter: Edit | a: Add | Esc: Back</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === 'attachments') {
+    return (
+      <Box flexDirection="column" width="100%">
+        <Text bold color={te.accentAlt}>Attachments ({attachments.length})</Text>
+        {attachmentsMessage && <Text dimColor>{attachmentsMessage}</Text>}
+
+        <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="gray" paddingX={1}>
+          {attachments.length === 0 && (
+            <Text dimColor>No attachments</Text>
+          )}
+          {attachments.map((att, i) => (
+            <Text
+              key={att.id}
+              color={i === selectedIndex ? te.accentAlt : te.fg}
+              bold={i === selectedIndex}
+            >
+              {i === selectedIndex ? '▶ ' : '  '}
+              {att.filename} ({Math.round((att.size || 0) / 1024)} KB)
+            </Text>
+          ))}
+        </Box>
+
+        <Box marginTop={1}>
+          <Text dimColor>↑/↓: Navigate | d: Download | u: Upload | Esc: Back</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === 'upload-attachment') {
+    return (
+      <Box flexDirection="column" width="100%">
+        <Text bold color={te.accentAlt}>Upload Attachment</Text>
+        <Box marginTop={1} borderStyle="round" borderColor={te.accent} paddingX={1}>
+          <TextInput
+            value={uploadPath}
+            onChange={setUploadPath}
+            onSubmit={async () => {
+              if (!uploadPath.trim() || !onUploadAttachment) return;
+              setSaving(true);
+              try {
+                const normalized = normalizeDraggedPath(uploadPath);
+                await onUploadAttachment(normalized);
+                setAttachmentsMessage('✓ Upload complete');
+                onRefresh?.();
+                setMode('attachments');
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Upload failed');
+                setMode('attachments');
+              } finally {
+                setSaving(false);
+              }
+            }}
+            placeholder="Drag & drop file path here..."
+          />
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>Enter: Upload | Esc: Cancel</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Render edit mode
+  if (mode !== 'view') {
+    const modeLabels: Record<string, string> = {
+      'edit-title': 'Edit Title',
+      'edit-description': 'Edit Description',
+      'add-comment': 'Add Comment',
+      'edit-comment': 'Edit Comment',
+    };
+
+    return (
+      <Box flexDirection="column" width="100%">
+        {error && <Text color="red">Error: {error}</Text>}
+
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={te.accent}
+          paddingX={1}
+          marginY={1}
+        >
+          <Text bold color={te.accentAlt}>
+            ✎ {modeLabels[mode]}
+          </Text>
+          <Box marginTop={1}>
+            <TextInput
+              value={editValue}
+              onChange={setEditValue}
+              onSubmit={handleSave}
+            />
+          </Box>
+        </Box>
+
+        {saving && <Text dimColor>Saving...</Text>}
+
+        <Box marginTop={1}>
+          <Text dimColor>
+            Enter: Save | Escape: Cancel
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Render view mode with selectable items
+  return (
+    <Box flexDirection="column" width="100%">
+      {error && <Text color="red">Error: {error}</Text>}
+      {copyMessage && <Text color="green">{copyMessage}</Text>}
+
+      {/* Key (non-selectable header) */}
+      <Box>
+        <Text bold color="white">{issue.key}</Text>
+        <Text color={getJiraStatusColor(issue.fields.status?.name)}>  {issue.fields.status?.name}</Text>
+        {issue.fields.issuetype?.name && (
+          <Text color={getJiraTypeColor(issue.fields.issuetype.name)}> · {issue.fields.issuetype.name}</Text>
+        )}
+        {issue.fields.priority?.name && (
+          <Text color={getJiraPriorityColor(issue.fields.priority.name)}> · {issue.fields.priority.name}</Text>
+        )}
+      </Box>
+
+      {/* Selectable: Status */}
+      <SelectableItem
+        label="STATUS"
+        content={<Text color={getJiraStatusColor(issue.fields.status?.name)}>{issue.fields.status.name}</Text>}
+        isSelected={selectedIndex === 0}
+        actionLabel={transitions.length > 0 ? "[CHANGE]" : "[VIEW]"}
+        compact
+      />
+
+      {/* Selectable: Title */}
+      <SelectableItem
+        label="TITLE"
+        content={<Text color="white">{issue.fields.summary}</Text>}
+        isSelected={selectedIndex === 1}
+        actionLabel="[EDIT]"
+      />
+
+      {/* Selectable: Description */}
+      <SelectableItem
+        label="DESCRIPTION"
+        content={
+          <Box flexDirection="column">
+            {renderMarkdownPreview(
+              description,
+              selectedIndex === 2 ? descriptionPreviewLines : 1
+            )}
+            {selectedIndex === 2 && description.split('\n').length > descriptionPreviewLines && (
+              <Text dimColor>... ({description.split('\n').length - descriptionPreviewLines} more lines)</Text>
+            )}
+          </Box>
+        }
+        isSelected={selectedIndex === 2}
+        actionLabel="[EDIT]"
+      />
+
+      {/* Selectable: Comments */}
+      <SelectableItem
+        label="COMMENTS"
+        content={`${comments.length} comment${comments.length !== 1 ? 's' : ''}`}
+        isSelected={selectedIndex === 3}
+        actionLabel="[VIEW]"
+        compact
+      />
+
+      {/* Selectable: Attachments */}
+      <SelectableItem
+        label="ATTACHMENTS"
+        content={`${attachments.length} attachment${attachments.length !== 1 ? 's' : ''}`}
+        isSelected={selectedIndex === 4}
+        actionLabel="[VIEW]"
+        compact
+      />
+
+      {/* Selectable: Add Comment */}
+      <SelectableItem
+        label="ADD COMMENT"
+        isSelected={selectedIndex === 5}
+        actionLabel="[ENTER]"
+        compact
+      />
+
+      {/* Selectable: Edit Comment (if user has comments) */}
+      {myComments.length > 0 && (
+        <SelectableItem
+          label="EDIT MY COMMENT"
+          content={`(${myComments.length} comment${myComments.length > 1 ? 's' : ''})`}
+          isSelected={selectedIndex === 6}
+          actionLabel="[EDIT]"
+          compact
+        />
+      )}
+
+      {/* Navigation hint */}
+      <Box marginTop={1}>
+        <Text dimColor>
+          ↑/↓: Navigate | Enter: Select | Ctrl+O: Open | Ctrl+Y: Copy URL | Ctrl+B: Bookmark
+        </Text>
+      </Box>
+      <Box>
+        <Text dimColor>
+          Ctrl+R: Refresh | Ctrl+U: Copy Key | Escape: Back {bookmarked ? '★' : ''}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
