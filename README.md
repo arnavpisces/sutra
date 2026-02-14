@@ -71,6 +71,7 @@ sutra
 - Atlassian API token
 
 Jira and Confluence base URLs are derived automatically.
+Sutra validates both Jira and Confluence credentials before opening control panels.
 
 ### Run from source
 

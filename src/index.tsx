@@ -6,6 +6,8 @@ import { program } from 'commander';
 import readline from 'readline';
 import { ConfigManager } from './config/config-manager.js';
 import { App } from './app.js';
+import { JiraClient } from './api/jira-client.js';
+import { ConfluenceClient } from './api/confluence-client.js';
 
 function createReadlineInterface() {
   return readline.createInterface({
@@ -87,6 +89,38 @@ async function setupWizard(force: boolean = false) {
     const jiraBaseUrl = `https://${site}.atlassian.net`;
     const confluenceBaseUrl = `${jiraBaseUrl}/wiki`;
 
+    const jiraClient = new JiraClient({
+      baseUrl: jiraBaseUrl,
+      email,
+      apiToken,
+    });
+    const confluenceClient = new ConfluenceClient({
+      baseUrl: confluenceBaseUrl,
+      email,
+      apiToken,
+    });
+
+    const validationErrors: string[] = [];
+    try {
+      await jiraClient.getMyself();
+    } catch (err) {
+      validationErrors.push(`Jira: ${err instanceof Error ? err.message : 'Validation failed'}`);
+    }
+    try {
+      await confluenceClient.getSpaces(1);
+    } catch (err) {
+      validationErrors.push(`Confluence: ${err instanceof Error ? err.message : 'Validation failed'}`);
+    }
+
+    if (validationErrors.length > 0) {
+      console.log('\n✗ Configuration validation failed:');
+      for (const issue of validationErrors) {
+        console.log(`  - ${issue}`);
+      }
+      console.log('\nFix credentials and run: sutra setup --force\n');
+      process.exit(1);
+    }
+
     ConfigManager.setJiraConfig({
       baseUrl: jiraBaseUrl,
       email,
@@ -99,6 +133,7 @@ async function setupWizard(force: boolean = false) {
     });
 
     console.log('\n✓ Configuration saved to ~/.sutra/config.json');
+    console.log('✓ Credentials verified with Jira and Confluence.');
     console.log(`  Jira: ${jiraBaseUrl}`);
     console.log(`  Confluence: ${confluenceBaseUrl}`);
   } catch (error) {

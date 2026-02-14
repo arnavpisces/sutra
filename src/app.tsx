@@ -34,30 +34,59 @@ export function App() {
   const terminalHeight = (stdout?.rows || 24) - 1;
 
   useEffect(() => {
-    try {
-      const config = ConfigManager.getConfig();
+    const initialize = async () => {
+      try {
+        const config = ConfigManager.getConfig();
 
-      if (!config.jira || !config.confluence) {
-        setError(
-          'Configuration incomplete. Run setup: npx sutra setup'
-        );
+        if (!config.jira || !config.confluence) {
+          setError('Configuration incomplete. Run setup: sutra setup');
+          setConnectionStatus('disconnected');
+          return;
+        }
+
+        const jira = new JiraClient(config.jira);
+        const confluence = new ConfluenceClient(config.confluence);
+        const validationErrors: string[] = [];
+
+        try {
+          await jira.getMyself();
+        } catch (err) {
+          validationErrors.push(
+            `Jira validation failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+          );
+        }
+
+        try {
+          await confluence.getSpaces(1);
+        } catch (err) {
+          validationErrors.push(
+            `Confluence validation failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+          );
+        }
+
+        if (validationErrors.length > 0) {
+          setError(
+            `Configuration validation failed.\n${validationErrors.join('\n')}\nRun: sutra setup --force`
+          );
+          setConnectionStatus('disconnected');
+          return;
+        }
+
+        setJiraClient(jira);
+        setJiraBaseUrl(config.jira.baseUrl);
+        setConfluenceClient(confluence);
+        setConnectionStatus('connected');
+        setToast({
+          type: 'success',
+          message: 'Successful setup: Jira and Confluence credentials verified.',
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to initialize clients');
         setConnectionStatus('disconnected');
-        return;
       }
+    };
 
-      const jira = new JiraClient(config.jira);
-      setJiraClient(jira);
-      setJiraBaseUrl(config.jira.baseUrl);
-
-      const confluence = new ConfluenceClient(config.confluence);
-      setConfluenceClient(confluence);
-      setConnectionStatus('connected');
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to initialize clients'
-      );
-      setConnectionStatus('disconnected');
-    }
+    initialize();
   }, []);
 
   useInput((input, key) => {
@@ -120,7 +149,7 @@ export function App() {
   if (!jiraClient || !confluenceClient) {
     return (
       <Box flexDirection="column" padding={2} alignItems="center">
-        <Spinner type="braille" label="Connecting to Atlassian..." />
+        <Spinner type="braille" label="Validating Jira and Confluence setup..." />
       </Box>
     );
   }

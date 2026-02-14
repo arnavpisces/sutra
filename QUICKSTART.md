@@ -19,6 +19,7 @@ Follow the prompts to enter:
 - API token (get it from https://id.atlassian.com/manage-profile/security/api-tokens)
 
 Sutra derives Jira and Confluence URLs automatically from your site username.
+It also validates credentials before entering Jira/Confluence control panels.
 
 ### 3. Launch the App
 ```bash
