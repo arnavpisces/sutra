@@ -1,5 +1,5 @@
 {
-  "name": "sutra",
+  "name": "@arnavpisces/sutra",
   "version": "1.0.0",
   "description": "Terminal TUI for Jira tickets and Confluence docs",
   "type": "module",

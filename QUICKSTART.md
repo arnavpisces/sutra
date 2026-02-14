@@ -213,6 +213,11 @@ CI safety:
 - Workflows do not run on external pull requests.
 - CI runs only on pushes to `main` (after merge).
 
+Public install command:
+```bash
+npm install -g @arnavpisces/sutra
+```
+
 ---
 
 **Ready to start?** Run `npm start -- setup` now!

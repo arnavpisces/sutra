@@ -60,7 +60,7 @@ Repository:
 ### Global install
 
 ```bash
-npm install -g sutra
+npm install -g @arnavpisces/sutra
 sutra setup
 sutra
 ```
