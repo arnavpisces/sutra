@@ -4,6 +4,11 @@
 
 `ticket-tui` (published package: `atlassian-opentui`) is an open-source TUI for Atlassian teams who want fewer browser tabs and faster execution loops.
 
+Repository:
+
+- Issues: https://github.com/arnavpisces/ticket-tui/issues
+- Pull Requests: https://github.com/arnavpisces/ticket-tui/pulls
+
 ## Why This Exists (10-second pitch)
 
 - Run Jira and Confluence from one app, without leaving terminal.
