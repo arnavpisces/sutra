@@ -29,8 +29,8 @@ function createReadlineInterface(): MaskedReadline {
   rl.stdoutMuted = false;
   (rl as any)._writeToOutput = function writeToOutput(this: MaskedReadline, stringToWrite: string) {
     if (this.stdoutMuted) {
-      // Keep line transitions intact while suppressing typed token characters.
-      if (stringToWrite.includes('\n') || stringToWrite.includes('\r')) {
+      // Keep completed line breaks, but suppress carriage-return redraws and token chars.
+      if (stringToWrite.includes('\n')) {
         this.output.write(stringToWrite);
       }
       return;
