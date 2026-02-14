@@ -20,7 +20,7 @@
     "terminal",
     "tui"
   ],
-  "author": "",
+  "author": "Arnav Kumar",
   "license": "Apache-2.0",
   "dependencies": {
     "adf-to-markdown": "^1.0.1",
