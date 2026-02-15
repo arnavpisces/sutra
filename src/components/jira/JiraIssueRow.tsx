@@ -14,6 +14,7 @@ interface ColumnWidths {
 
 const MIN_SUMMARY_WIDTH = 20;
 const BASE_PADDING = 4; // indicator + spacing
+const ROW_PREFIX = '  '; // Align table header with SelectInput row prefix (e.g. "❯ ")
 
 const padRight = (value: string, width: number) => {
   if (value.length >= width) return value.slice(0, width);
@@ -38,9 +39,9 @@ const getColumnWidths = (columns: number): ColumnWidths => {
 
 export function JiraIssueHeader() {
   const { stdout } = useStdout();
-  const width = stdout?.columns || 80;
+  const width = Math.max(40, (stdout?.columns || 80) - ROW_PREFIX.length);
   const cols = getColumnWidths(width);
-  const headerLine = `${padRight('KEY', cols.key)} ${padRight('STATUS', cols.status)} ${padRight('TYPE', cols.type)} ${padRight('PRIORITY', cols.priority)} ${padRight('SUMMARY', cols.summary)}`;
+  const headerLine = `${ROW_PREFIX}${padRight('KEY', cols.key)} ${padRight('STATUS', cols.status)} ${padRight('TYPE', cols.type)} ${padRight('PRIORITY', cols.priority)} ${padRight('TITLE', cols.summary)}`;
 
   return (
     <Box>

@@ -43,8 +43,8 @@ export function TicketList({ client, onSelectTicket, onCancel }: TicketListProps
 
       try {
         // JQL query must be bounded for /search/jql endpoint
-        // Use assignee = currentUser() OR recently updated issues in projects user can see
-        const jql = 'assignee = currentUser() OR reporter = currentUser() ORDER BY updated DESC';
+        // Use newest-created ordering so newly created tickets show up immediately at the top.
+        const jql = 'assignee = currentUser() OR reporter = currentUser() ORDER BY created DESC';
         const result = await client.searchIssues(jql, PAGE_SIZE, startAt);
         setTickets(result.issues);
         setTotal(typeof result.total === 'number' ? result.total : startAt + result.issues.length);
@@ -130,7 +130,7 @@ export function TicketList({ client, onSelectTicket, onCancel }: TicketListProps
       paddingX={1}
     >
       <Box marginBottom={1}>
-        <Text bold color={te.accentAlt}>RECENT TICKETS</Text>
+        <Text bold color={te.accentAlt}>BROWSE TICKETS</Text>
         <Text color={te.fg}>{`  Page ${pageIndex + 1}/${totalPages} | ${total} total`}</Text>
       </Box>
       <Box marginBottom={1}>

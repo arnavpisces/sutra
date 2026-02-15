@@ -14,6 +14,24 @@ export interface JqlSearchProps {
   onCancel: () => void;
 }
 
+function toFriendlyJqlError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : '';
+  const normalized = raw.toLowerCase();
+
+  // Jira returns 400 for invalid JQL in both enhanced and fallback endpoints.
+  if (
+    normalized.includes('http 400') ||
+    normalized.includes('bad request') ||
+    normalized.includes('jql') ||
+    normalized.includes('syntax') ||
+    normalized.includes('parse')
+  ) {
+    return 'Wrong query. Kindly check your JQL syntax and try again.';
+  }
+
+  return raw || 'Search failed. Please try again.';
+}
+
 export function JqlSearch({ client, onSelectIssue, onCancel }: JqlSearchProps) {
   const [jql, setJql] = useState('');
   const [issues, setIssues] = useState<JiraIssue[] | null>(null);
@@ -46,7 +64,7 @@ export function JqlSearch({ client, onSelectIssue, onCancel }: JqlSearchProps) {
       setIssues(res.issues);
       jqlCache.set(cacheKey, res.issues);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
+      setError(toFriendlyJqlError(err));
     } finally {
       setLoading(false);
     }

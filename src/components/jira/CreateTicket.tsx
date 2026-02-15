@@ -11,7 +11,13 @@ interface CreateTicketProps {
     onCreated: (issueKey: string) => void;
 }
 
-type Step = 'project' | 'type' | 'summary' | 'description' | 'creating';
+type Step = 'project' | 'type' | 'priority' | 'summary' | 'description' | 'creating';
+const DEFAULT_PRIORITY = '__default__';
+const DEFAULT_PRIORITY_ITEM: FuzzySelectItem = {
+    label: 'Use project default priority',
+    value: DEFAULT_PRIORITY,
+    key: DEFAULT_PRIORITY
+};
 
 export function CreateTicket({ client, onCancel, onCreated }: CreateTicketProps) {
     const [step, setStep] = useState<Step>('project');
@@ -20,6 +26,8 @@ export function CreateTicket({ client, onCancel, onCreated }: CreateTicketProps)
 
     const [issueTypes, setIssueTypes] = useState<FuzzySelectItem[]>([]);
     const [selectedType, setSelectedType] = useState<any>(null);
+    const [priorities, setPriorities] = useState<FuzzySelectItem[]>([DEFAULT_PRIORITY_ITEM]);
+    const [selectedPriority, setSelectedPriority] = useState<string>(DEFAULT_PRIORITY);
 
     const [summary, setSummary] = useState('');
     const [description, setDescription] = useState('');
@@ -36,6 +44,15 @@ export function CreateTicket({ client, onCancel, onCreated }: CreateTicketProps)
                     value: p.key,
                     key: p.id
                 })));
+                const prios = await client.getPriorities();
+                setPriorities([
+                    DEFAULT_PRIORITY_ITEM,
+                    ...prios.map((p) => ({
+                        label: p.name,
+                        value: p.id,
+                        key: p.id
+                    }))
+                ]);
             } catch (err) {
                 // Ignore error on initial fetch
             }
@@ -74,7 +91,13 @@ export function CreateTicket({ client, onCancel, onCreated }: CreateTicketProps)
     const handleCreate = async () => {
         setStep('creating');
         try {
-            const issue = await client.createIssue(selectedProject, selectedType, summary, description);
+            const issue = await client.createIssue(
+                selectedProject,
+                selectedType,
+                summary,
+                description,
+                selectedPriority !== DEFAULT_PRIORITY ? selectedPriority : undefined
+            );
             onCreated(issue.key);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Creation failed');
@@ -86,7 +109,7 @@ export function CreateTicket({ client, onCancel, onCreated }: CreateTicketProps)
         if (key.escape) {
             if (step === 'project') onCancel();
             if (step === 'type') setStep('project');
-            if (step === 'summary') setStep('type');
+            if (step === 'summary') setStep('priority');
             if (step === 'description') setStep('summary');
         }
     });
@@ -120,10 +143,29 @@ export function CreateTicket({ client, onCancel, onCreated }: CreateTicketProps)
                     items={issueTypes}
                     onSelect={(val) => {
                         setSelectedType(val);
-                        setStep('summary');
+                        setStep('priority');
                     }}
                     onBack={() => setStep('project')}
                     placeholder="Select type..."
+                />
+                {error && <Text color="red">{error}</Text>}
+            </Box>
+        );
+    }
+
+    if (step === 'priority') {
+        return (
+            <Box flexDirection="column">
+                <Text bold color={te.accentAlt}>Create Ticket: Select Priority</Text>
+                <FuzzySelect
+                    label="Priority"
+                    items={priorities}
+                    onSelect={(val) => {
+                        setSelectedPriority(val);
+                        setStep('summary');
+                    }}
+                    onBack={() => setStep('type')}
+                    placeholder="Select priority..."
                 />
                 {error && <Text color="red">{error}</Text>}
             </Box>

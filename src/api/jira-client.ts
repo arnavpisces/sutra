@@ -42,6 +42,11 @@ export interface JiraSearchResult {
   total: number;
 }
 
+export interface JiraPriority {
+  id: string;
+  name: string;
+}
+
 export interface JiraComment {
   body: any;
 }
@@ -77,7 +82,7 @@ export class JiraClient {
 
   async updateIssue(
     key: string,
-    fields: { summary?: string; description?: any }
+    fields: { summary?: string; description?: any; priority?: { id: string } | null }
   ): Promise<void> {
     await this.apiClient.put(`/rest/api/3/issue/${key}`, { fields });
   }
@@ -209,28 +214,63 @@ export class JiraClient {
     return [];
   }
 
-  async createIssue(projectKey: string, issueTypeId: string, summary: string, description: string): Promise<JiraIssue> {
-    const body = {
-      fields: {
-        project: { key: projectKey },
-        issuetype: { id: issueTypeId },
-        summary: summary,
-        description: {
-          type: "doc",
-          version: 1,
-          content: [
-            {
-              type: "paragraph",
-              content: [
-                {
-                  type: "text",
-                  text: description
-                }
-              ]
-            }
-          ]
-        }
+  async getPriorities(): Promise<JiraPriority[]> {
+    try {
+      const modern = await this.apiClient.get<any>('/rest/api/3/priority/search?maxResults=200');
+      const values = modern?.values || modern?.results || modern?.priorities || [];
+      if (Array.isArray(values)) {
+        return values
+          .map((p: any) => ({ id: String(p.id || ''), name: String(p.name || '') }))
+          .filter((p: JiraPriority) => p.id && p.name);
       }
+    } catch {
+      // Continue to fallback endpoint.
+    }
+
+    const legacy = await this.apiClient.get<any>('/rest/api/3/priority');
+    if (Array.isArray(legacy)) {
+      return legacy
+        .map((p: any) => ({ id: String(p.id || ''), name: String(p.name || '') }))
+        .filter((p: JiraPriority) => p.id && p.name);
+    }
+
+    return [];
+  }
+
+  async createIssue(
+    projectKey: string,
+    issueTypeId: string,
+    summary: string,
+    description: string,
+    priorityId?: string
+  ): Promise<JiraIssue> {
+    const issueFields: any = {
+      project: { key: projectKey },
+      issuetype: { id: issueTypeId },
+      summary: summary,
+      description: {
+        type: "doc",
+        version: 1,
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: description
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    if (priorityId) {
+      issueFields.priority = { id: priorityId };
+    }
+
+    const body = {
+      fields: issueFields
     };
     return this.apiClient.post<JiraIssue>('/rest/api/3/issue', body);
   }

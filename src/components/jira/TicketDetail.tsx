@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
-import { JiraIssue, JiraTransition, JiraAttachment } from '../../api/jira-client.js';
+import { JiraIssue, JiraTransition, JiraAttachment, JiraPriority } from '../../api/jira-client.js';
 import { AdfConverter } from '../../formatters/adf-converter.js';
 import { SelectableItem } from '../common/SelectableItem.js';
 import { openExternalEditor } from '../../utils/external-editor.js';
@@ -24,6 +24,7 @@ type DetailMode =
   | 'attachments'
   | 'upload-attachment'
   | 'select-status'
+  | 'select-priority'
   | 'select-comment';
 
 export interface TicketDetailProps {
@@ -31,8 +32,10 @@ export interface TicketDetailProps {
   baseUrl: string;
   currentAccountId?: string;
   transitions?: JiraTransition[];
+  priorities?: JiraPriority[];
   onSaveTitle?: (title: string) => Promise<void>;
   onSaveDescription?: (description: string) => Promise<void>;
+  onSavePriority?: (priorityId: string) => Promise<void>;
   onAddComment?: (comment: string) => Promise<void>;
   onUpdateComment?: (commentId: string, comment: string) => Promise<void>;
   onTransition?: (transitionId: string) => Promise<void>;
@@ -40,7 +43,7 @@ export interface TicketDetailProps {
   onDownloadAttachment?: (attachmentId: string, filename: string) => Promise<{ data: Buffer; filename: string }>;
   onUploadAttachment?: (filePath: string) => Promise<void>;
   onBookmarkChanged?: () => void;
-  onRefresh?: () => void;
+  onRefresh?: () => Promise<void> | void;
   onBack?: () => void;
 }
 
@@ -49,8 +52,10 @@ export function TicketDetail({
   baseUrl,
   currentAccountId,
   transitions = [],
+  priorities = [],
   onSaveTitle,
   onSaveDescription,
+  onSavePriority,
   onAddComment,
   onUpdateComment,
   onTransition,
@@ -68,6 +73,7 @@ export function TicketDetail({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [selectedCommentIndex, setSelectedCommentIndex] = useState(0);
   const [selectedTransitionIndex, setSelectedTransitionIndex] = useState(0);
+  const [selectedPriorityIndex, setSelectedPriorityIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
@@ -110,13 +116,15 @@ export function TicketDetail({
   );
 
   // Selectable items: Status, Title, Description, Add Comment, [Edit Comment if exists]
-  const selectableItems = ['status', 'title', 'description', 'add-comment'];
+  const selectableItems = ['status', 'priority', 'title', 'description', 'add-comment'];
   // add comments + attachments entries
-  selectableItems.splice(3, 0, 'comments', 'attachments');
+  selectableItems.splice(4, 0, 'comments', 'attachments');
   if (myComments.length > 0) {
     selectableItems.push('edit-comment');
   }
   const selectableCount = selectableItems.length;
+  const indexOfItem = (item: string) => selectableItems.indexOf(item);
+  const isSelectedItem = (item: string) => selectedIndex === indexOfItem(item);
 
   // Clear copy message after 2 seconds
   useEffect(() => {
@@ -265,6 +273,18 @@ export function TicketDetail({
       return;
     }
 
+    // Priority selection mode
+    if (mode === 'select-priority') {
+      if (key.upArrow) {
+        setSelectedPriorityIndex(prev => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setSelectedPriorityIndex(prev => Math.min(priorities.length - 1, prev + 1));
+      } else if (key.return && priorities.length > 0) {
+        handlePriorityUpdate();
+      }
+      return;
+    }
+
     // Don't handle other input when editing (TextInput is active)
     if (mode !== 'view') return;
 
@@ -314,6 +334,16 @@ export function TicketDetail({
           setMode('select-status');
         }
         break;
+      case 'priority':
+        if (priorities.length > 0) {
+          const currentPriorityId = String(issue.fields.priority?.id || '');
+          const idx = priorities.findIndex((p) => p.id === currentPriorityId);
+          setSelectedPriorityIndex(idx >= 0 ? idx : 0);
+          setMode('select-priority');
+        } else {
+          setError('No priorities available for this Jira project.');
+        }
+        break;
       case 'title':
         setEditValue(issue.fields.summary);
         setMode('edit-title');
@@ -352,10 +382,28 @@ export function TicketDetail({
       if (onTransition) {
         await onTransition(transitions[selectedTransitionIndex].id);
       }
+      if (onRefresh) await onRefresh();
       setMode('view');
-      if (onRefresh) onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Status change failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePriorityUpdate = async () => {
+    if (saving || priorities.length === 0 || !onSavePriority) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      const selected = priorities[selectedPriorityIndex];
+      if (!selected) return;
+      await onSavePriority(selected.id);
+      if (onRefresh) await onRefresh();
+      setMode('view');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Priority update failed');
     } finally {
       setSaving(false);
     }
@@ -389,9 +437,9 @@ export function TicketDetail({
           }
           break;
       }
+      if (onRefresh) await onRefresh();
       setMode('view');
       setEditingCommentId(null);
-      if (onRefresh) onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Operation failed');
     } finally {
@@ -492,6 +540,47 @@ export function TicketDetail({
           <Text dimColor>
             ↑/↓: Navigate | Enter: Select | Escape: Cancel
           </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === 'select-priority') {
+    return (
+      <Box flexDirection="column" width="100%">
+        {error && <Text color="red">Error: {error}</Text>}
+
+        <Box
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={te.accent}
+          paddingX={1}
+          marginY={1}
+        >
+          <Text bold color={te.accentAlt}>
+            ⚑ Change Priority (Current: {issue.fields.priority?.name || 'None'})
+          </Text>
+          <Box flexDirection="column" marginTop={1}>
+            {priorities.length === 0 && (
+              <Text dimColor>No priorities available.</Text>
+            )}
+            {priorities.map((p, i) => (
+              <Text
+                key={p.id}
+                color={i === selectedPriorityIndex ? te.accentAlt : getJiraPriorityColor(p.name)}
+                bold={i === selectedPriorityIndex}
+              >
+                {i === selectedPriorityIndex ? '▶ ' : '  '}
+                {p.name}
+              </Text>
+            ))}
+          </Box>
+        </Box>
+
+        {saving && <Text dimColor>Updating priority...</Text>}
+
+        <Box marginTop={1}>
+          <Text dimColor>↑/↓: Navigate | Enter: Apply | Escape: Cancel</Text>
         </Box>
       </Box>
     );
@@ -665,8 +754,17 @@ export function TicketDetail({
       <SelectableItem
         label="STATUS"
         content={<Text color={getJiraStatusColor(issue.fields.status?.name)}>{issue.fields.status.name}</Text>}
-        isSelected={selectedIndex === 0}
+        isSelected={isSelectedItem('status')}
         actionLabel={transitions.length > 0 ? "[CHANGE]" : "[VIEW]"}
+        compact
+      />
+
+      {/* Selectable: Priority */}
+      <SelectableItem
+        label="PRIORITY"
+        content={<Text color={getJiraPriorityColor(issue.fields.priority?.name)}>{issue.fields.priority?.name || 'None'}</Text>}
+        isSelected={isSelectedItem('priority')}
+        actionLabel={priorities.length > 0 ? "[CHANGE]" : "[VIEW]"}
         compact
       />
 
@@ -674,7 +772,7 @@ export function TicketDetail({
       <SelectableItem
         label="TITLE"
         content={<Text color="white">{issue.fields.summary}</Text>}
-        isSelected={selectedIndex === 1}
+        isSelected={isSelectedItem('title')}
         actionLabel="[EDIT]"
       />
 
@@ -685,14 +783,14 @@ export function TicketDetail({
           <Box flexDirection="column">
             {renderMarkdownPreview(
               description,
-              selectedIndex === 2 ? descriptionPreviewLines : 1
+              isSelectedItem('description') ? descriptionPreviewLines : 1
             )}
-            {selectedIndex === 2 && description.split('\n').length > descriptionPreviewLines && (
+            {isSelectedItem('description') && description.split('\n').length > descriptionPreviewLines && (
               <Text dimColor>... ({description.split('\n').length - descriptionPreviewLines} more lines)</Text>
             )}
           </Box>
         }
-        isSelected={selectedIndex === 2}
+        isSelected={isSelectedItem('description')}
         actionLabel="[EDIT]"
       />
 
@@ -700,7 +798,7 @@ export function TicketDetail({
       <SelectableItem
         label="COMMENTS"
         content={`${comments.length} comment${comments.length !== 1 ? 's' : ''}`}
-        isSelected={selectedIndex === 3}
+        isSelected={isSelectedItem('comments')}
         actionLabel="[VIEW]"
         compact
       />
@@ -709,7 +807,7 @@ export function TicketDetail({
       <SelectableItem
         label="ATTACHMENTS"
         content={`${attachments.length} attachment${attachments.length !== 1 ? 's' : ''}`}
-        isSelected={selectedIndex === 4}
+        isSelected={isSelectedItem('attachments')}
         actionLabel="[VIEW]"
         compact
       />
@@ -717,7 +815,7 @@ export function TicketDetail({
       {/* Selectable: Add Comment */}
       <SelectableItem
         label="ADD COMMENT"
-        isSelected={selectedIndex === 5}
+        isSelected={isSelectedItem('add-comment')}
         actionLabel="[ENTER]"
         compact
       />
@@ -727,7 +825,7 @@ export function TicketDetail({
         <SelectableItem
           label="EDIT MY COMMENT"
           content={`(${myComments.length} comment${myComments.length > 1 ? 's' : ''})`}
-          isSelected={selectedIndex === 6}
+          isSelected={isSelectedItem('edit-comment')}
           actionLabel="[EDIT]"
           compact
         />

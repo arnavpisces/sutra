@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { JiraClient, JiraTransition } from '../../api/jira-client.js';
+import { JiraClient, JiraTransition, JiraPriority } from '../../api/jira-client.js';
 import { useJiraIssue } from '../../hooks/useJiraIssue.js';
 import { TicketDetail } from './TicketDetail.js';
 import { TicketList } from './TicketList.js';
@@ -32,6 +32,9 @@ export interface JiraViewProps {
 }
 
 const jiraSearchCache = new PersistentCache<any[]>('jira:search', 300);
+const jiraTicketListCache = new PersistentCache<any>('jira:ticket-list', 300);
+const jiraQuickCache = new PersistentCache<any[]>('jira:quick', 300);
+const jiraJqlCache = new PersistentCache<any[]>('jira:jql', 300);
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; onReset: () => void },
@@ -73,6 +76,7 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
   const { issue, loading, error, refetch } = useJiraIssue(client, selectedKey, baseUrl);
   const [errorBoundaryKey, setErrorBoundaryKey] = useState(0);
   const [transitions, setTransitions] = useState<JiraTransition[]>([]);
+  const [priorities, setPriorities] = useState<JiraPriority[]>([]);
   const [currentAccountId, setCurrentAccountId] = useState<string | undefined>();
   const [searchReturnView, setSearchReturnView] = useState<ViewMode>('menu');
   const [bookmarksVersion, setBookmarksVersion] = useState(0);
@@ -95,6 +99,13 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
         setCurrentAccountId(myself.accountId);
       } catch {
         // Ignore - edit comment will just not show
+      }
+
+      try {
+        const allPriorities = await client.getPriorities();
+        setPriorities(allPriorities);
+      } catch {
+        setPriorities([]);
       }
     };
     fetchMyself();
@@ -162,10 +173,6 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
     setViewMode('detail');
   };
 
-  const handleCreated = (key: string) => {
-    openIssue(key, 'create');
-  };
-
   const handleTicketSelect = (key: string) => {
     openIssue(key);
   };
@@ -184,9 +191,22 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
   };
 
   // Handle save title
+  function invalidateJiraIssueCaches() {
+    jiraSearchCache.clear();
+    jiraTicketListCache.clear();
+    jiraQuickCache.clear();
+    jiraJqlCache.clear();
+  }
+
+  const handleCreated = (key: string) => {
+    invalidateJiraIssueCaches();
+    openIssue(key, 'create');
+  };
+
   const handleSaveTitle = async (title: string) => {
     if (!selectedKey) return;
     await client.updateIssue(selectedKey, { summary: title });
+    invalidateJiraIssueCaches();
   };
 
   // Handle save description
@@ -203,6 +223,15 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
       ],
     };
     await client.updateIssue(selectedKey, { description: adfDescription });
+    invalidateJiraIssueCaches();
+  };
+
+  const handleSavePriority = async (priorityId: string) => {
+    if (!selectedKey) return;
+    await client.updateIssue(selectedKey, {
+      priority: priorityId ? { id: priorityId } : null,
+    });
+    invalidateJiraIssueCaches();
   };
 
   // Handle add comment
@@ -241,6 +270,7 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
   const handleTransition = async (transitionId: string) => {
     if (!selectedKey) return;
     await client.transitionIssue(selectedKey, transitionId);
+    invalidateJiraIssueCaches();
   };
 
   // Handle keyboard shortcuts (only for non-detail views - detail handles its own escape)
@@ -271,7 +301,7 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
         borderColor={te.accent}
         paddingX={1}
       >
-        <Box>
+        <Box paddingLeft={2}>
           <Text bold color={te.accentAlt}>JIRA CONTROL PANEL</Text>
         </Box>
         <MenuList
@@ -279,7 +309,7 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
           onSelect={handleMenuSelect}
           isActive={viewMode === 'menu'}
         />
-        <Box>
+        <Box paddingLeft={2}>
           <Text color={te.muted}>Enter: Select | Ctrl+Q: Quit</Text>
         </Box>
       </Box>
@@ -416,8 +446,10 @@ export function JiraView({ client, baseUrl }: JiraViewProps) {
           baseUrl={baseUrl}
           currentAccountId={currentAccountId}
           transitions={transitions}
+          priorities={priorities}
           onSaveTitle={handleSaveTitle}
           onSaveDescription={handleSaveDescription}
+          onSavePriority={handleSavePriority}
           onAddComment={handleAddComment}
           onUpdateComment={handleUpdateComment}
           onTransition={handleTransition}
