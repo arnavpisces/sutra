@@ -21,12 +21,6 @@ Show
 Sleep 2200ms
 Enter
 Sleep 3200ms
-Down
-Sleep 260ms
-Down
-Sleep 260ms
-Up
-Sleep 280ms
 Enter
 Sleep 2500ms
 Down
@@ -40,12 +34,6 @@ Sleep 240ms
 Down
 Sleep 240ms
 Down
-Sleep 320ms
-Up
-Sleep 240ms
-Up
-Sleep 240ms
-Up
-Sleep 1500ms
+Sleep 1200ms
 Ctrl+C
 Sleep 700ms
