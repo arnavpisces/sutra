@@ -29,11 +29,8 @@ Built for day-to-day engineering workflows where speed matters.
 ### 3) Run JQL search (`currentUser()` example)
 ![JQL search](https://raw.githubusercontent.com/arnavpisces/sutra/main/docs/media/gifs/jira-jql-search.gif)
 
-### 4) Search Confluence pages
-![Search Confluence pages](https://raw.githubusercontent.com/arnavpisces/sutra/main/docs/media/gifs/confluence-search.gif)
-
-### 5) View and find inside Confluence pages
-![View Confluence page](https://raw.githubusercontent.com/arnavpisces/sutra/main/docs/media/gifs/confluence-view-find.gif)
+### 4) Search, view and edit Confluence doc
+![Search, view and edit Confluence doc](https://raw.githubusercontent.com/arnavpisces/sutra/main/docs/media/gifs/confluence-search.gif)
 
 ## Features
 

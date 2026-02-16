@@ -20,32 +20,30 @@ Show
 
 Sleep 2200ms
 Tab
-Sleep 420ms
+Sleep 360ms
 Down
-Sleep 320ms
+Sleep 260ms
 Enter
-Sleep 1200ms
-Type "software"
-Sleep 2400ms
+Sleep 900ms
+Type "project"
+Sleep 1800ms
+Escape
+Sleep 350ms
 Enter
-Sleep 3200ms
-PageDown
-Sleep 350ms
-PageDown
-Sleep 350ms
-PageUp
-Sleep 350ms
+Sleep 2500ms
+Enter
+Sleep 2500ms
 Type "/"
 Sleep 220ms
 Type "decision"
-Sleep 350ms
+Sleep 280ms
 Enter
-Sleep 1200ms
+Sleep 1000ms
 Ctrl+T
-Sleep 700ms
-Type " (edited in Sutra demo)"
-Sleep 420ms
+Sleep 520ms
+Type " (edited from confluence workflow demo)"
+Sleep 340ms
 Ctrl+S
-Sleep 2200ms
+Sleep 1900ms
 Ctrl+C
 Sleep 700ms
