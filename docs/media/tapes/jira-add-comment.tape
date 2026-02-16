@@ -8,8 +8,9 @@ Set Width 1400
 Set Height 840
 Set Theme "catppuccin-mocha"
 Set Padding 20
-Set TypingSpeed 18ms
+Set TypingSpeed 0ms
 Set Framerate 24
+Set PlaybackSpeed 1.45
 Set WindowBar Colorful
 
 Hide
@@ -17,26 +18,26 @@ Type "node dist/index.js start"
 Enter
 Show
 
-Sleep 3s
+Sleep 2200ms
 Enter
-Sleep 4s
+Sleep 3200ms
 Enter
-Sleep 3s
+Sleep 2500ms
 Down
-Sleep 450ms
+Sleep 240ms
 Down
-Sleep 450ms
+Sleep 240ms
 Down
-Sleep 450ms
+Sleep 240ms
 Down
-Sleep 450ms
-Down
-Sleep 700ms
+Sleep 300ms
 Enter
-Sleep 1s
-Type "Quick update: this looks good from the terminal workflow."
-Sleep 700ms
+Sleep 1000ms
+Type "a"
+Sleep 280ms
+Type "Looks good. Updating this from Sutra demo."
+Sleep 450ms
 Enter
-Sleep 3s
+Sleep 2300ms
 Ctrl+C
-Sleep 1s
+Sleep 700ms

@@ -8,8 +8,9 @@ Set Width 1400
 Set Height 840
 Set Theme "catppuccin-mocha"
 Set Padding 20
-Set TypingSpeed 18ms
+Set TypingSpeed 0ms
 Set Framerate 24
+Set PlaybackSpeed 1.45
 Set WindowBar Colorful
 
 Hide
@@ -17,30 +18,34 @@ Type "node dist/index.js start"
 Enter
 Show
 
-Sleep 3s
+Sleep 2200ms
 Enter
-Sleep 4s
+Sleep 3200ms
 Down
-Sleep 500ms
+Sleep 260ms
 Down
-Sleep 600ms
+Sleep 260ms
 Up
-Sleep 700ms
+Sleep 280ms
 Enter
-Sleep 3s
+Sleep 2500ms
 Down
-Sleep 600ms
+Sleep 240ms
 Down
-Sleep 600ms
+Sleep 240ms
 Down
-Sleep 600ms
+Sleep 240ms
 Down
-Sleep 600ms
+Sleep 240ms
 Down
-Sleep 700ms
+Sleep 240ms
+Down
+Sleep 320ms
 Up
-Sleep 500ms
+Sleep 240ms
 Up
-Sleep 2s
+Sleep 240ms
+Up
+Sleep 1500ms
 Ctrl+C
-Sleep 1s
+Sleep 700ms

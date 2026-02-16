@@ -8,8 +8,9 @@ Set Width 1400
 Set Height 840
 Set Theme "catppuccin-mocha"
 Set Padding 20
-Set TypingSpeed 18ms
+Set TypingSpeed 0ms
 Set Framerate 24
+Set PlaybackSpeed 1.45
 Set WindowBar Colorful
 
 Hide
@@ -17,22 +18,22 @@ Type "node dist/index.js start"
 Enter
 Show
 
-Sleep 3s
+Sleep 2200ms
 Down
-Sleep 450ms
+Sleep 250ms
 Down
-Sleep 450ms
+Sleep 250ms
 Down
-Sleep 650ms
+Sleep 400ms
 Enter
-Sleep 2s
+Sleep 1400ms
 Type "assignee = currentUser() ORDER BY updated DESC"
-Sleep 800ms
+Sleep 320ms
 Enter
-Sleep 4s
+Sleep 3200ms
 Down
-Sleep 700ms
+Sleep 320ms
 Enter
-Sleep 3s
+Sleep 1800ms
 Ctrl+C
-Sleep 1s
+Sleep 700ms
