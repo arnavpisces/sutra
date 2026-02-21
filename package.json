@@ -1,6 +1,6 @@
 {
   "name": "@arnavpisces/sutra",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Terminal TUI for Jira tickets and Confluence docs",
   "type": "module",
   "main": "dist/index.js",
